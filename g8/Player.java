@@ -8,9 +8,8 @@ import java.util.Random;
 public class Player implements sqdance.sim.Player {
 
     // some constants
-    private final double MIN_DIST = .1; // min distance between players (to avoid claustrophobia)
-    private final double MIN_DANCE_DIST = .5; // min distance between players in order to dance
-    private final double MAX_DIST = 2.0; // max distance between players in order to travel
+    private final double PAIR_DIST = .52; // min distance between pairs 
+    private final double PARTNER_DIST = .51; // distance between partners 
 
     // E[i][j]: the remaining enjoyment player j can give player i
     // -1 if the value is unknown (everything unknown upon initialization)
@@ -24,6 +23,7 @@ public class Player implements sqdance.sim.Player {
     private double room_side = -1;
 
     private int pairs;
+    private int square_pairs;
 
     private int[] idle_turns;
 
@@ -32,6 +32,7 @@ public class Player implements sqdance.sim.Player {
 	this.d = d;
 	this.room_side = (double) room_side;
         this.pairs = d / 2;
+        this.square_pairs = this.pairs;
 	random = new Random();
 	E = new int [d][d];
 	idle_turns = new int[d];
@@ -52,20 +53,18 @@ public class Player implements sqdance.sim.Player {
     public Point[] generate_starting_locations() {
         Point[] locs = new Point[d];
         
-        // distance between partners
-        double partner_dist = MIN_DANCE_DIST;
-
-        // distance between pairs
-        int side_pairs = pairs / 4; // number of pairs per side of square
-        double pair_dist = 20 / side_pairs - partner_dist;
-        pair_dist = (pair_dist == 0.5 ? 0.49 : pair_dist);
-        pair_dist = Math.max(Math.min(MAX_DIST, pair_dist), MIN_DIST);
+        // determine number of pairs per side
+        int side_pairs = pairs / 4; // ideal number of pairs per side of square
+        if ((PAIR_DIST + PARTNER_DIST) * side_pairs > room_side) {
+            side_pairs = (int) Math.floor(room_side / (PAIR_DIST + PARTNER_DIST));
+        }
+        square_pairs = side_pairs * 4;
 
         double startXY = 0.0;
         // square side length
         double square_side = room_side;
-        if ((pair_dist + partner_dist) * side_pairs < room_side) {
-            square_side = (pair_dist + partner_dist) * side_pairs;
+        if ((PAIR_DIST + PARTNER_DIST) * side_pairs < room_side) {
+            square_side = (PAIR_DIST + PARTNER_DIST) * side_pairs;
             startXY = (room_side - square_side) / 2;
         }
         Point curr = new Point(startXY, startXY);
@@ -80,14 +79,14 @@ public class Player implements sqdance.sim.Player {
             // determine increment
             double inc;
             if (i % 2 == 0) {
-                inc = pair_dist;
+                inc = PAIR_DIST;
             }
             else {
-                inc = partner_dist;
+                inc = PARTNER_DIST;
             }
 
             // begin a new side
-            if (i > side_pairs * 2 && i % (side_pairs * 2) == 1) {
+            if (i == side_pairs * 8 || (i > side_pairs * 2 && i % (side_pairs * 2) == 1)) {
                 side++;
             }
 
@@ -125,11 +124,34 @@ public class Player implements sqdance.sim.Player {
     // scores: cumulative score of the dancers
     // partner_ids: index of the current dance partner. -1 if no dance partner
     // enjoyment_gained: integer amount (-5,0,3,4, or 6) of enjoyment gained in the most recent 6-second interval
+    /*
+     * Basic strategy:
+     *  - dance with current partner. if soulmates, move out of the way, else switch partners.
+     */
     public Point[] play(Point[] dancers, int[] scores, int[] partner_ids, int[] enjoyment_gained) {
 	Point[] instructions = new Point[d];
         for (int i = 0; i < d; i++) {
-            instructions[i] = new Point(0.0,0.0);
+            if (i % 2 == 0) {
+                instructions[i] = new Point(0.0,0.0);
+            } // even dancers stay in place
+            else {
+                Point next;
+                if (i < square_pairs * 2) {
+                    next = dancers[(i + 2) % (square_pairs * 2)];
+                }
+                else {
+                    if (i + 2 > d) {
+                        next = dancers[(i + 2) % d + square_pairs * 2];
+                    }
+                    else {
+                        next = dancers[i + 2];
+                    }
+                }
+                Point curr = dancers[i];
+                instructions[i] = new Point(next.x - curr.x, next.y - curr.y);
+            } // odd dancers move to place occupied by previous odd dancer
         }
+        
         /*
 	for (int i=0; i<d; i++) {
 	    int j = partner_ids[i];
@@ -200,4 +222,76 @@ public class Player implements sqdance.sim.Player {
     private double generateRandPos(double min, double max) {
         return random.nextDouble() * (max - min) + min;
     }
+
+    /*
+     * generateSquare(): generate an array of dancer locations in a square
+     */
+    private Point[] generateSquare() {
+        Point[] locs = new Point[square_pairs * 2];
+        
+        // determine number of pairs per side
+        int side_pairs = square_pairs / 4; // ideal number of pairs per side of square
+        if ((PAIR_DIST + PARTNER_DIST) * side_pairs > room_side) {
+            side_pairs = (int) Math.floor(room_side / (PAIR_DIST + PARTNER_DIST));
+        }
+
+        double startXY = 0.0;
+        // square side length
+        double square_side = room_side;
+        if ((PAIR_DIST + PARTNER_DIST) * side_pairs < room_side) {
+            square_side = (PAIR_DIST + PARTNER_DIST) * side_pairs;
+            startXY = (room_side - square_side) / 2;
+        }
+        Point curr = new Point(startXY, startXY);
+
+        int side = 0;
+	for (int i = 0 ; i < square_pairs * 2 ; ++i) {
+            if (i == 0) {
+                locs[i] = curr;
+                continue;
+            }
+
+            // determine increment
+            double inc;
+            if (i % 2 == 0) {
+                inc = PAIR_DIST;
+            }
+            else {
+                inc = PARTNER_DIST;
+            }
+
+            // begin a new side
+            if (i == side_pairs * 8 || (i > side_pairs * 2 && i % (side_pairs * 2) == 1)) {
+                side++;
+            }
+
+            // determine position of dancer
+            double newX, newY;
+            if (side == 0) {
+                newX = curr.x + inc;
+                newY = curr.y;
+            }
+            else if (side == 1) {
+                newX = curr.x;
+                newY = curr.y + inc;
+            }
+            else if (side == 2) {
+                newX = curr.x - inc;
+                newY = curr.y;
+            }
+            else if (side == 3) {
+                newX = curr.x;
+                newY = curr.y - inc;
+            }
+            else {
+                newX = -1.0;
+                newY = -1.0;
+            }
+
+            curr = new Point(newX, newY);
+            locs[i] = curr;
+	}	
+	return locs;
+    }
+
 }
