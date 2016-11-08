@@ -25,8 +25,13 @@ public class Player implements sqdance.sim.Player {
 
     private int pairs;
     
-    private Map<Integer,Integer> square_dancers; // mapping of dancer_id to place in the square
-    private Set<Integer> soulmates;
+    private Map<Integer,Integer> circle_dancers; // mapping of dancer_id to place in the circle 
+    private Map<Integer,Integer> soulmates; // mapping of soulmate ids to place in circle
+    private Map<Integer,Integer> soulmates_values; // mapping of place in circle to soulmate id
+
+    private Point[] soulmate_circle; // set of locations that create a soulmate circle
+
+    private boolean swap; // flag that indicates when to swap vs when to stay
 
     private int[] idle_turns;
 
@@ -35,8 +40,11 @@ public class Player implements sqdance.sim.Player {
 	this.d = d;
 	this.room_side = (double) room_side;
         this.pairs = d / 2;
-        this.square_dancers = new HashMap<Integer,Integer>();
-        this.soulmates = new HashSet<Integer>();
+        this.circle_dancers = new HashMap<Integer,Integer>();
+        this.soulmates = new HashMap<Integer,Integer>();
+        this.soulmates_values = new HashMap<Integer,Integer>();
+        this.soulmate_circle = generateCircle(d, 2.0);
+        this.swap = false;
 	random = new Random();
 	E = new int [d][d];
 	idle_turns = new int[d];
@@ -50,83 +58,31 @@ public class Player implements sqdance.sim.Player {
 
 
     /*
-     * generate_starting_locations(): place all players in pairs in a square
+     * generate_starting_locations(): place all players in pairs in a circle 
      *  maximizing distance between pairs
-     * Doesn't handle instances where we need multiple squares just yet
+     *  doesn't handle odd # of dancers yet
      */
     public Point[] generate_starting_locations() {
-        Point[] locs = new Point[d];
-        
-        // determine number of pairs per side
-        int side_pairs = pairs / 4; // ideal number of pairs per side of square
-        if ((PAIR_DIST + PARTNER_DIST) * side_pairs > room_side) {
-            side_pairs = (int) Math.floor(room_side / (PAIR_DIST + PARTNER_DIST));
-        }
+        int total_dancers = d;
+        Point center = new Point(room_side / 2, room_side/2);
+        Point[] locs = new Point[total_dancers];
 
-        double startXY = 0.0;
-        // square side length
-        double square_side = room_side;
-        if ((PAIR_DIST + PARTNER_DIST) * side_pairs < room_side) {
-            square_side = (PAIR_DIST + PARTNER_DIST) * side_pairs;
-            startXY = (room_side - square_side) / 2;
-        }
-        Point curr = new Point(startXY, startXY);
+        // theta is 360/(# of dancers)
+        double theta = 2 * Math.PI / Math.ceil(total_dancers / 2);
+        // length of chord is 2*r*sin(theta/2) = 0.52 (for inner circle)
+        double inner_rad = PAIR_DIST / (2 * Math.sin(theta / 2));
+        double outer_rad = inner_rad + PARTNER_DIST;
 
-        int side = 0;
-	for (int i = 0 ; i < d ; i++) {
-            if (i == 0) {
-                locs[i] = curr;
-                square_dancers.put(i,i);
-                continue;
-            }
-
-            // determine increment
-            double inc;
-            if (i % 2 == 0) {
-                inc = PAIR_DIST;
+        for (int i = 0; i < total_dancers; i++) {
+            if (i < total_dancers / 2) {
+                locs[i] = center.add(polarToCart(outer_rad, theta * i));
             }
             else {
-                inc = PARTNER_DIST;
+                locs[i] = center.add(polarToCart(inner_rad, theta * -Math.floor(i - total_dancers/2)));
             }
-
-            // begin a new side
-            if (i == side_pairs * 8 || (i > side_pairs * 2 && i % (side_pairs * 2) == 1)) {
-                side++;
-            }
-
-            // determine position of dancer
-            double newX, newY;
-            if (side == 0) {
-                newX = curr.x + inc;
-                newY = curr.y;
-                square_dancers.put(i,i);
-            }
-            else if (side == 1) {
-                newX = curr.x;
-                newY = curr.y + inc;
-                square_dancers.put(i,i);
-            }
-            else if (side == 2) {
-                newX = curr.x - inc;
-                newY = curr.y;
-                square_dancers.put(i,i);
-            }
-            else if (side == 3) {
-                newX = curr.x;
-                newY = curr.y - inc;
-                square_dancers.put(i,i);
-            }
-            else {
-                newX = generateRandPos(startXY + 0.6, room_side - startXY - 0.6);
-                newY = generateRandPos(startXY + 0.6, room_side - startXY - 0.6);
-            } // place extra dancers randomly in the middle
-
-            curr = new Point(newX, newY);
-            locs[i] = curr;
-	}
-        //System.out.format("(%f,%f) (%f,%f) (%f,%f)\n", locs[0].x, locs[0].y, locs[1].x, locs[1].y, locs[2].x, locs[2].y);
-        //System.out.println(locs.length);
-	return locs;
+            circle_dancers.put(i,i);
+        }
+        return locs;
     }
 
     // play function
@@ -140,194 +96,170 @@ public class Player implements sqdance.sim.Player {
      */
     public Point[] play(Point[] dancers, int[] scores, int[] partner_ids, int[] enjoyment_gained) {
 	Point[] instructions = new Point[d];
-
+        
+        // track the new soulmates we get to properly reassign circle positions
+        Set<Integer> new_soulmates = new HashSet<Integer>();
+        
         // handle all soulmates
         for (int i = 0; i < d; i++) {
             int enjoyment = enjoyment_gained[i];
             Point curr = dancers[i];
-            double newX, newY;
 
             if (enjoyment == 6) {
-                System.out.println("found a soulmate!");
                 int partner = partner_ids[i];
-                newX = 0.0;
-                newY = 0.0;
-                if (!soulmates.contains(i) && !soulmates.contains(partner)) {
-                    // add dancer and partner to soulmate set
-                    soulmates.add(i);
-                    soulmates.add(partner);
-                    square_dancers.remove(i);
-                    square_dancers.remove(partner);
-
-                    // determine direction to go
-                    if (dancers[partner].x == curr.x) {
-                        if (curr.y > room_side / 2) {
-                            newY = PAIR_DIST;
-                        } else {
-                            newY = -PAIR_DIST;
-                        }
+                if (!soulmates.containsKey(i) && !soulmates.containsKey(partner)) {
+                    int curr_idx = circle_dancers.remove(i);
+                    int partner_idx = circle_dancers.remove(partner);
+                    new_soulmates.add(curr_idx);
+                    new_soulmates.add(partner_idx);
+                    
+                    // if there are dancers in the spot being filled, move them over
+                    if (curr_idx < partner_idx) {
+                        vacateSpaces(i, curr_idx, partner, (curr_idx == 0 ? 44 : d - curr_idx));
                     }
-                    else if (dancers[partner].y == curr.y) {
-                        if (curr.x > room_side / 2) {
-                        newX = PAIR_DIST;
-                        } else {
-                            newX = -PAIR_DIST;
-                        }
+                    else {
+                        vacateSpaces(i, (partner_idx == 0 ? 44 : d - partner_idx), partner, partner_idx);
                     }
                 }
-                instructions[i] = new Point(newX, newY);
-                instructions[partner] = new Point(newX, newY);
             }
         }
 
-        Point[] new_square = generateSquare();
+        Point[] new_circle = generateCircle(circle_dancers.size(), 0.0);
 
         for (int i = 0; i < d; i++) {
-            if (soulmates.contains(i)) {
-                continue;
-            }
-            
             Point curr = dancers[i];
-          
             Point nextPos;
-            if (square_dancers.containsKey(i)) {
-                // is a square dancer
-                int square_idx = square_dancers.get(i);
-                if (square_idx == 0) {
-                    // if first dancer in square, hold position
-                    nextPos = new_square[square_idx];
-                }
-                else {
-                    // otherwise go to the next position
-                    int new_idx = (square_idx + 1) % new_square.length;
-                    new_idx = (new_idx == 0 ? new_idx + 1 : new_idx);
-                    nextPos = new_square[new_idx];
-                    square_dancers.put(i, new_idx);
-                }
+
+            if (circle_dancers.containsKey(i)) {
+                // is a circle dancer
+                nextPos = (swap ? swapPartners(i, new_circle, new_soulmates) : curr);
             }
             else {
-                // not a square dancer
-                int next = (i + 1) % d;
-                while (square_dancers.containsKey(next) || soulmates.contains(next)) {
-                    next = (next + 1) % d;
-                }
-                nextPos = dancers[next];
+                // not a circle dancer (so must be a soulmate)
+                int next_idx = soulmates.get(i);
+                nextPos = soulmate_circle[next_idx];
             }
-            if (nextPos.x == -1.0 && nextPos.y == -1.0) {
-                instructions[i] = new Point(0.0, 0.0);
-            }
-            else {
-                instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
-            }
+            instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
             instructions[i] = makeValidMove(instructions[i]);
         } 
-	return instructions;
-    }
-    
-    private int total_enjoyment(int enjoyment_gained) {
-	switch (enjoyment_gained) {
-	case 3: return 60; // stranger
-	case 4: return 200; // friend
-	case 6: return 10800; // soulmate
-	default: throw new IllegalArgumentException("Not dancing with anyone...");
-	}	
+
+        swap = !swap;
+        return instructions;
     }
 
     /*
-     * generateRandPost(): generate a random position given a min and max bound
+     * swapPartners(i, new_circle): swap partners in the circle
+     * 
+     * i (int): the current dancer's id
+     * new_circle (Point[]): an array of locations that comprise the new circle
+     * new_soulmates (Set<Integer>): an array of indexes of new soulmates who were just removed 
+     *   from the circle (so we adjust for those removed dancers)
      */
-    private double generateRandPos(double min, double max) {
-        return random.nextDouble() * (max - min) + min;
-    }
-
-    /*
-     * generateSquare(): generate an array of dancer locations in a square
-     */
-    private Point[] generateSquare() {
-        Point[] locs = new Point[square_dancers.size()];
+    private Point swapPartners(int i, Point[] new_circle, Set<Integer> new_soulmates) {
+        int circle_idx = circle_dancers.get(i);
+        Point nextPos;
         
-        // determine number of pairs per side
-        int side_pairs = (int) Math.floor(square_dancers.size() / 8); // ideal number of pairs per side of square
-        if ((PAIR_DIST + PARTNER_DIST) * side_pairs > room_side) {
-            side_pairs = (int) Math.floor(room_side / (PAIR_DIST + PARTNER_DIST));
-        }
-
-        double startXY = 0.0;
-        // square side length
-        double square_side = room_side;
-        if ((PAIR_DIST + PARTNER_DIST) * side_pairs < room_side) {
-            square_side = (PAIR_DIST + PARTNER_DIST) * side_pairs;
-            startXY = (room_side - square_side) / 2;
-        }
-        Point curr = new Point(startXY, startXY);
-
-        int side = 0;
-	for (int i = 0; i < square_dancers.size(); i++) {
-            if (i == 0) {
-                locs[i] = curr;
-                continue;
+        // adjust circle position for newly-removed soulmates
+        int diff = 0;
+        for (Integer idx : new_soulmates) {
+            if (circle_idx > idx) {
+                diff++;
             }
+        }
+        circle_idx = circle_idx - diff;
 
-            // determine increment
-            double inc;
-            if (i % 2 == 0) {
-                inc = PAIR_DIST;
+        if (circle_idx == 0) {
+            // if first dancer in circle, hold position
+            nextPos = new_circle[circle_idx];
+            circle_dancers.put(i, circle_idx);
+        }
+        else {
+            // otherwise go to the next position
+            int new_idx = (circle_idx + 1) % new_circle.length;
+            new_idx = (new_idx == 0 ? new_idx + 1 : new_idx);
+            nextPos = new_circle[new_idx];
+            circle_dancers.put(i, new_idx);
+        }
+        return nextPos;
+    }
+
+    /*
+     * generateCircle(total_dancers, rad_inc): 
+     *   return a set of locations for a double-layered round-robin circle
+     *   index 0 is on the outer circle along the normal/zero vector
+     *   
+     *   total_dancers (int) - total # of dancers in circle
+     *   rad_inc (double) - increase in inner radius size from calculated default
+     */
+    private Point[] generateCircle(int total_dancers, double rad_inc) {
+        Point center = new Point(room_side / 2, room_side/2);
+        Point[] locs = new Point[total_dancers];
+
+        // theta is 360/(# of dancers)
+        double theta = 2 * Math.PI / Math.ceil(total_dancers / 2);
+        // length of chord is 2*r*sin(theta/2) = 0.52 (for inner circle)
+        double inner_rad = PAIR_DIST / (2 * Math.sin(theta / 2)) + rad_inc;
+        double outer_rad = inner_rad + PARTNER_DIST;
+
+        for (int i = 0; i < total_dancers; i++) {
+            if (i < total_dancers / 2) {
+                locs[i] = center.add(polarToCart(outer_rad, theta * i));
             }
             else {
-                inc = PARTNER_DIST;
+                locs[i] = center.add(polarToCart(inner_rad, theta * -Math.floor(i - total_dancers/2)));
             }
-
-            // begin a new side
-            if (i == side_pairs * 8 || (i > side_pairs * 2 && i % (side_pairs * 2) == 1)) {
-                side++;
-            }
-
-            // determine position of dancer
-            double newX, newY;
-            if (side == 0) {
-                newX = curr.x + inc;
-                newY = curr.y;
-            }
-            else if (side == 1) {
-                newX = curr.x;
-                newY = curr.y + inc;
-            }
-            else if (side == 2) {
-                newX = curr.x - inc;
-                newY = curr.y;
-            }
-            else if (side == 3) {
-                newX = curr.x;
-                newY = curr.y - inc;
-            }
-            else {
-                newX = -1.0;
-                newY = -1.0;
-            }
-
-            curr = new Point(newX, newY);
-            locs[i] = curr;
-	}	
-        //System.out.format("(%f,%f) (%f,%f) (%f,%f)\n", locs[0].x, locs[0].y, locs[1].x, locs[1].y, locs[2].x, locs[2].y);
-        //System.out.println(locs.length);
-	return locs;
+        }
+        return locs;
     }
 
     /*
      * makeValidMove(): make a move valid (make sure it's within 2.0m)
      */
     private Point makeValidMove(Point move) {
-        if (magnitude(move) <= 2.0) {
+        if (magnitude(move) < 2.0) {
             return move;
         }
-        return new Point(move.x / magnitude(move) * 2.0, move.y / magnitude(move) * 2.0);
+        return new Point(move.x / magnitude(move) * 1.9999, move.y / magnitude(move) * 1.9999);
     }
+
+    /*
+     * vacateSpaces(): vacate spaces in the soulmate circle by shifting over
+     */
+    private void vacateSpaces(int curr_id, int curr_idx, int partner_id, int partner_idx) {
+        int inner, outer;
+        if (curr_idx > partner_idx) {
+            inner = curr_idx;
+            outer = partner_idx;
+        }
+        else {
+            inner = partner_idx;
+            outer = curr_idx;
+        }
+
+        if (soulmates_values.containsKey(inner) && soulmates_values.containsKey(outer)) {
+            int next_curr = soulmates_values.get(inner);
+            int next_partner = soulmates_values.get(outer);
+            vacateSpaces(next_curr, (inner - 1) % (d / 2) + d / 2, next_partner, (outer + 1) % (d / 2));
+        }
+        soulmates.put(curr_id, curr_idx);
+        soulmates_values.put(curr_idx, curr_id);
+        soulmates.put(partner_id, partner_idx);
+        soulmates_values.put(partner_idx, partner_id);
+    }
+
 
     /*
      * magnitude(): Find the magnitude of a point.
      */
     private double magnitude(Point move) {
         return Math.sqrt(move.x * move.x + move.y * move.y);
+    }
+
+    /*
+     * polarToCart(): convert polar r, theta to cartesian x,y point
+     */
+    private Point polarToCart(double r, double theta) {
+       return new Point(r * Math.cos(theta), r * Math.sin(theta));
     }
 
 
