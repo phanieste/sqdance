@@ -9,12 +9,18 @@ import java.util.Random;
 public class Player implements sqdance.sim.Player {
 
     // some constants
-    private final double PAIR_DIST = .52; // min distance between pairs 
-    private final double PARTNER_DIST = .51; // distance between partners 
-
+    private final double PAIR_DIST = 2/1000; // min distance between pairs 
+    private final double AREA_HEIGHT = .5+3*PAIR_DIST; // height of grid block
     // E[i][j]: the remaining enjoyment player j can give player i
     // -1 if the value is unknown (everything unknown upon initialization)
     private int[][] E = null;
+    private Point[][] ptArr;
+    private Point[][] fullArr;
+    boolean isFull[];
+
+    int count = 0;
+
+    double even_out;
 
     // random generator
     private Random random = null;
@@ -25,33 +31,25 @@ public class Player implements sqdance.sim.Player {
 
     private int pairs;
     
-    private Map<Integer,Integer> circle_dancers; // mapping of dancer_id to place in the circle 
-    private Map<Integer,Integer> soulmates; // mapping of soulmate ids to place in circle
-    private Map<Integer,Integer> soulmates_values; // mapping of place in circle to soulmate id
+    private List<Integer> circle_dancers; // mapping of dancer_id to place in the circle 
 
-    private Point[] soulmate_circle; // set of locations that create a soulmate circle
+    private Point[] soulmate_dancer; // set of locations that create a soulmate circle
 
     private boolean swap; // flag that indicates when to swap vs when to stay
 
-    private int[] idle_turns;
+    private int[] curr_position;
 
     // init function called once with simulation parameters before anything else is called
     public void init(int d, int room_side) {
 	this.d = d;
 	this.room_side = (double) room_side;
-        this.pairs = d / 2;
-        this.circle_dancers = new HashMap<Integer,Integer>();
-        this.soulmates = new HashMap<Integer,Integer>();
-        this.soulmates_values = new HashMap<Integer,Integer>();
-        this.soulmate_circle = generateCircle(d, 2.0);
-        this.swap = false;
-	random = new Random();
-	E = new int [d][d];
-	idle_turns = new int[d];
-	for (int i=0 ; i<d ; i++) {
-	    idle_turns[i] = 0;
-	    for (int j=0; j<d; j++) {
-		E[i][j] = i == j ? 0 : -1;
+    arr_parameters = (int)(room_side/AREA_HEIGHT);
+    ptArr = new Point[arr_parameters][arr_parameters];
+    even_out = (room_side-AREA_HEIGHT*arr_parameters)/2;
+      
+	for (int i=0 ; i<arr_parameters ; i++) {
+	    for (int j=0; j<arr_parameters; j++) {
+		    E[i][j] = new Point(even_out+AREA_HEIGHT*i,even_out+AREA_HEIGHT*j);
 	    }
 	}
     }
@@ -63,24 +61,18 @@ public class Player implements sqdance.sim.Player {
      *  doesn't handle odd # of dancers yet
      */
     public Point[] generate_starting_locations() {
+
         int total_dancers = d;
-        Point center = new Point(room_side / 2, room_side/2);
+        
         Point[] locs = new Point[total_dancers];
 
-        // theta is 360/(# of dancers)
-        double theta = 2 * Math.PI / Math.ceil(total_dancers / 2);
-        // length of chord is 2*r*sin(theta/2) = 0.52 (for inner circle)
-        double inner_rad = PAIR_DIST / (2 * Math.sin(theta / 2));
-        double outer_rad = inner_rad + PARTNER_DIST;
 
         for (int i = 0; i < total_dancers; i++) {
-            if (i < total_dancers / 2) {
-                locs[i] = center.add(polarToCart(outer_rad, theta * i));
-            }
-            else {
-                locs[i] = center.add(polarToCart(inner_rad, theta * -Math.floor(i - total_dancers/2)));
-            }
-            circle_dancers.put(i,i);
+            locs[i] = fullArr[i][1-(i%2)];
+            soulmate_dancer[i] = locs[i];
+            circle_dancers.add(i);
+            curr_position[i] = i;
+            isFull=true;
         }
         return locs;
     }
@@ -95,15 +87,16 @@ public class Player implements sqdance.sim.Player {
      *  - dance with current partner. if soulmates, move out of the way, else switch partners in a round robin
      */
     public Point[] play(Point[] dancers, int[] scores, int[] partner_ids, int[] enjoyment_gained) {
-	Point[] instructions = new Point[d];
+	   Point[] instructions = new Point[d];
         
         // track the new soulmates we get to properly reassign circle positions
         Set<Integer> new_soulmates = new HashSet<Integer>();
-        
-        // handle all soulmates
+        int enjoyment = enjoyment_gained[i];
+
+        // dafeault to staying still
         for (int i = 0; i < d; i++) {
-            int enjoyment = enjoyment_gained[i];
-            Point curr = dancers[i];
+            Point[] whatDo  = new Point[total_dancers];
+            whatDo[i] = new Point (0,0);
 
             if (enjoyment == 6) {
                 int partner = partner_ids[i];
