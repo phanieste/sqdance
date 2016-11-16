@@ -43,7 +43,8 @@ public class Player implements sqdance.sim.Player {
         this.circle_dancers = new HashMap<Integer,Integer>();
         this.soulmates = new HashMap<Integer,Integer>();
         this.soulmates_values = new HashMap<Integer,Integer>();
-        this.soulmate_circle = generateCircle(d, 2.0);
+        if(d>180){this.soulmate_circle = generateCircle(d, 0);}
+        else{this.soulmate_circle = generateCircle(d, 2);}
         this.swap = false;
 	random = new Random();
 	E = new int [d][d];
@@ -115,10 +116,10 @@ public class Player implements sqdance.sim.Player {
                     
                     // if there are dancers in the spot being filled, move them over
                     if (curr_idx < partner_idx) {
-                        vacateSpaces(i, curr_idx, partner, (curr_idx == 0 ? 44 : d - curr_idx));
+                        vacateSpaces(i, curr_idx, partner, (curr_idx == 0 ? d/2 : d - curr_idx));
                     }
                     else {
-                        vacateSpaces(i, (partner_idx == 0 ? 44 : d - partner_idx), partner, partner_idx);
+                        vacateSpaces(i, (partner_idx == 0 ? d/2 : d - partner_idx), partner, partner_idx);
                     }
                 }
             }
@@ -137,7 +138,7 @@ public class Player implements sqdance.sim.Player {
             else {
                 // not a circle dancer (so must be a soulmate)
                 int next_idx = soulmates.get(i);
-                nextPos = soulmate_circle[next_idx];
+                nextPos = (soulmate_circle[next_idx]);
             }
             instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
             instructions[i] = makeValidMove(instructions[i]);
