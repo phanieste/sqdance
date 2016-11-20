@@ -8,6 +8,8 @@ import java.util.Random;
 
 public class Player implements sqdance.sim.Player {
 
+
+
     // some constants
     private final double PAIR_DIST = .52; // min distance between pairs 
     private final double PARTNER_DIST = .51; // distance between partners 
@@ -64,6 +66,14 @@ public class Player implements sqdance.sim.Player {
      *  doesn't handle odd # of dancers yet
      */
     public Point[] generate_starting_locations() {
+        if (d == 2){         //if there are 2 dancers
+            Point [] locs2 = new Point[d];
+            Point center2 = new Point(room_side / 2, room_side/2);
+            Point center2plus = new Point(room_side/2,(room_side/2)+PARTNER_DIST);
+            locs2[0] = center2;
+            locs2[1] = center2plus;
+            return locs2;
+        }
         int total_dancers = d;
         Point center = new Point(room_side / 2, room_side/2);
         Point[] locs = new Point[total_dancers];
@@ -98,6 +108,14 @@ public class Player implements sqdance.sim.Player {
     public Point[] play(Point[] dancers, int[] scores, int[] partner_ids, int[] enjoyment_gained) {
 	Point[] instructions = new Point[d];
         
+        if (d == 2){
+            System.out.println("Yup");
+            for (int i=0;i<d;i++){
+                instructions[i]= new Point(0,0);
+                instructions[i]=makeValidMove(instructions[i]);
+            }
+            return instructions;
+        }
         // track the new soulmates we get to properly reassign circle positions
         Set<Integer> new_soulmates = new HashSet<Integer>();
         
