@@ -190,6 +190,7 @@ class Simulator {
 		    return p;
 		}});
 	final Player player = thread.call_wait(init_timeout);
+	Point[] sL = null;
 	Point[] L = null;
 	Point[] Lp = new Point[N]; // previous location of player, for drawing movement lines
 	thread.call_start(new Callable <Point[]> () {
@@ -197,7 +198,7 @@ class Simulator {
 		    return player.generate_starting_locations();
 		}});
 	try {
-	    L = thread.call_wait(init_timeout);
+	    sL = thread.call_wait(init_timeout);
 	}
 	catch (Exception e) {
 	    if (e instanceof TimeoutException) {
@@ -209,10 +210,13 @@ class Simulator {
 		System.exit(1);
 	    }
 	}		    
-	if (L.length != N)
+	if (sL.length != N)
 	    throw new RuntimeException("Player submitted invalid list of initial locations.");
+	L = new Point[N];
 	for (int i=0; i<N; i++) {
-	    L[i] = new Point(L[i].x, L[i].y, i);
+	    if (sL[i].x < 0 || sL[i].x > room_side || sL[i].y < 0 || sL[i].y > room_side) 
+		throw new IllegalArgumentException("Player submitted invalid initial location.");
+	    L[i] = new Point(sL[i].x, sL[i].y, i);
 	    Lp[i] = L[i];
 	}
 	// play the game
@@ -276,21 +280,21 @@ class Simulator {
 		M[i] = null;
 		C[i] = false;
 		if (m == null)
-		    println(out, i + ": Unspecified action");
+		    throw new IllegalArgumentException(i + ": Unspecified action");
 		else if (Double.isNaN(m.x) || Double.isInfinite(m.x))
-		    println(out, i + ": Undefined movement x");
+		    throw new IllegalArgumentException(i + ": Undefined movement x");
 		else if (Double.isNaN(m.y) || Double.isInfinite(m.y))
-		    println(out, i + ": Undefined movement y");
+		    throw new IllegalArgumentException(i + ": Undefined movement y");
 		else if (L[i].x + m.x < 0)
-		    println(out, i + ": Invalid movement: x < 0");
+		    throw new IllegalArgumentException(i + ": Invalid movement: x < 0");
 		else if (L[i].y + m.y < 0)
-		    println(out, i + ": Invalid movement: y < 0");
+		    throw new IllegalArgumentException(i + ": Invalid movement: y < 0");
 		else if (L[i].x + m.x > room_side)
-		    println(out, i + ": Invalid movement: x > " + room_side);
+		    throw new IllegalArgumentException(i + ": Invalid movement: x > " + room_side);
 		else if (L[i].y + m.y > room_side)
-		    println(out, i + ": Invalid movement: y > " + room_side);
+		    throw new IllegalArgumentException(i + ": Invalid movement: y > " + room_side);
 		else if (distance_gt(m, p_0, 2.0))
-		    println(out, i + ": Invalid movement vector of " + m.x + "," + m.y);
+		    throw new IllegalArgumentException(i + ": Invalid movement vector of " + m.x + "," + m.y);
 		else M[i] = m;
 	    }
 	    // assign stationary players to try to dance with closest
@@ -349,7 +353,10 @@ class Simulator {
 		boolean c = true; // whether player i is dancing with j
 		if (i > j && M[j].id == i) // avoid double processing dance pairs, only do when i < j
 		    continue;
-		if (Sm[i] == j) met_soulmate[i] = true;
+		if (Sm[i] == j) {
+		    met_soulmate[i] = true;
+		    met_soulmate[j] = true;
+		}
 		// search for closest player to i
 		double dx = L[i].x - L[j].x;
 		double dy = L[i].y - L[j].y;
@@ -380,7 +387,7 @@ class Simulator {
 		    if (i != k && j != k) {
 			dx = L[j].x - L[k].x;
 			dy = L[j].y - L[k].y;
-			if (dx * dx + dy * dy <= personal_bubble * personal_bubble) { 
+			if (dx * dx + dy * dy <= personal_bubble) { 
 			    println(out, j + " is feeling claustrophobic!");
 			    E[j] += claustrophobic_eps;
 			    score[j] += claustrophobic_eps;
@@ -461,7 +468,7 @@ class Simulator {
 	    return d < p.d ? -1 : (d > p.d ? 1 : 0);
 	}
     }
-
+    
     private static int[][] generate_enjoyment_array (int friends, int strangers)
     {
 	if (friends < 0 || strangers < 0)

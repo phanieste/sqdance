@@ -109,16 +109,16 @@ function process(data)
 	    ctx.stroke();
 	}
     }
-    // draw the chat connections
+    // draw the partner connections
     for (var i = 0 ; i != N ; ++i) {
 	var j = chat[i];
 	if (i != j) {
 	    if (rel[i] == 0)
-		ctx.strokeStyle = "blue";
+		ctx.strokeStyle = "blue"; // stranger dance
 	    else if (rel[i] == 1)
-		ctx.strokeStyle = "green";
+		ctx.strokeStyle = "green"; // friend dance
 	    else if (rel[i] == 2)
-		ctx.strokeStyle = "magenta";
+		ctx.strokeStyle = "magenta"; // soulmate dance
 	    ctx.beginPath();
 	    ctx.moveTo(x_curr[i], y_curr[i]);
 	    ctx.lineTo(x_curr[j], y_curr[j]);
