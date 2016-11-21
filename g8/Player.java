@@ -11,8 +11,11 @@ public class Player implements sqdance.sim.Player {
 
 
     // some constants
-    private final double PAIR_DIST = .52; // min distance between pairs 
-    private final double PARTNER_DIST = .51; // distance between partners 
+    private final double MIN_DIST = 0.1001; // min distance to avoid claustrophobia 
+    private final double PAIR_DIST = .500011; // min distance between pairs 
+    private final double PARTNER_DIST = .50001; // distance between partners 
+    // max number of dancers to handle before "too many" for dance floor
+    private final int MAX_DANCERS = 1368; 
 
     // E[i][j]: the remaining enjoyment player j can give player i
     // -1 if the value is unknown (everything unknown upon initialization)
@@ -331,25 +334,66 @@ public class Player implements sqdance.sim.Player {
     }
 
     /*
-     * generateGrid():
-
-     * xdir -- flag for what direction to place next location (in x direction)
-        0: add +x direction
-        1: -x direction
+     * generateGrid(): generate a grid of locations for dancers
+     *   if there are too many dancers, place them above the grid in a similar formation
      */
     private Point[] generateGrid(int dancers) {
         Point[] locs = new Point[dancers];
-        int midpoint = dancers / 2;
+        int midpoint = (dancers > MAX_DANCERS ? MAX_DANCERS / 2 : dancers / 2);
         Point start = new Point(1.0,1.0);
         locs[0] = start;
 
         // flag for what direction we place next, once we hit a border switch the flag
         boolean xdir = false;
-        // flag for placing in y directio
+        // flag for placing in y direction (false is below, true is above)
         boolean ydir = false;
         Point curr = start;
         for (int i = 1; i < dancers; i++) {
-            if (i == midpoint) {
+            if (i == MAX_DANCERS) {
+                curr = new Point(locs[1].x, locs[1].y - PAIR_DIST);
+                ydir = true;
+                xdir = false;
+            }
+            else if (i > MAX_DANCERS) {
+                // place extra dancers
+                if (i == MAX_DANCERS + (dancers - MAX_DANCERS) / 2) {
+                    // "wrap-around" at halfway point
+                    curr = new Point(curr.x, curr.y - MIN_DIST);
+                    ydir = false;
+                    xdir = !xdir;
+                }
+                else if (!xdir) {
+                    // place to the right (in x direction)
+                    if (curr.x + MIN_DIST > room_side - 1) {
+                        if (!ydir) {
+                            curr = new Point(curr.x, curr.y + 2 * MIN_DIST);
+                        }
+                        else {
+                            curr = new Point(curr.x, curr.y - 2 * MIN_DIST);
+                        }
+                        xdir = true;
+                    }
+                    else {
+                        curr = new Point(curr.x + MIN_DIST, curr.y);
+                    }
+                }
+                else if (xdir) {
+                    // place to the left (in x direction)
+                    if (curr.x - MIN_DIST < locs[1].x) {
+                        if (!ydir) {
+                            curr = new Point(curr.x, curr.y + 2 * MIN_DIST);
+                        }
+                        else {
+                            curr = new Point(curr.x, curr.y - 2 * MIN_DIST);
+                        }
+                        xdir = false;
+                    }
+                    else {
+                        curr = new Point(curr.x - MIN_DIST, curr.y);
+                    }
+                }
+            }
+            else if (i == midpoint) {
                 // always "wrap-around" at halfway point
                 curr = new Point(curr.x, curr.y + PARTNER_DIST);
                 ydir = true;
