@@ -54,9 +54,6 @@ public class Player implements sqdance.sim.Player {
 
     private int[] idle_turns;
 
-    int lastPosition = 0;
-    boolean firstTime = true;
-
     // init function called once with simulation parameters before anything else is called
     public void init(int d, int room_side) {
        this.d = d;
@@ -213,20 +210,16 @@ public class Player implements sqdance.sim.Player {
                     
                     instructions[i] = makeValidMove(new Point(soulmate1.x-curr.x,soulmate1.y-curr.y));
                     instructions[partner] = makeValidMove(new Point(soulmate2.x-curr.x,soulmate2.y-curr.y));
-                    grid_dancers.remove(partner);
-                    grid_dancers.remove(i);
+                    int curr_idx = grid_dancers.remove(i);
+                    int partner_idx = grid_dancers.remove(partner);
 
-                    new_soulmates.add(i);
-                    new_soulmates.add(partner);
+                    new_soulmates.add(curr_idx);
+                    new_soulmates.add(partner_idx);
 
                     grid = generateGrid(grid_dancers.size());
 
                 }
             }
-
-            lastPosition = 0;
-            firstTime = true;
-
 
             for (int i = 0; i < d; i++) {
                 Point curr = dancers[i];
@@ -263,6 +256,15 @@ public class Player implements sqdance.sim.Player {
         int activeDancers = grid_dancers.size();
         int idx = grid_dancers.get(i);
         Point nextPos;
+       
+        // adjust for removed soulmates
+        int diff = 0;
+        for (Integer soulmate_idx : new_soulmates) {
+            if (idx > soulmate_idx) {
+                diff++;
+            }
+        }
+        idx = idx - diff;
 
         if (idx == 0) {
             // if first dancer, hold position
@@ -270,25 +272,12 @@ public class Player implements sqdance.sim.Player {
             grid_dancers.put(i, idx);
             return nextPos;
         }
-
-        if(firstTime){
+        else {
             int new_idx = (idx + 1) % activeDancers;
             new_idx = (new_idx == 0 ? new_idx + 1 : new_idx);
             nextPos = grid[new_idx];
             grid_dancers.put(i, new_idx);
-            firstTime = false;
-            lastPosition = new_idx;
-            return nextPos;
-        }else{
-
-            // otherwise go to the next position
-            int new_idx = (lastPosition + 1) % activeDancers;
-            new_idx = (new_idx == 0 ? new_idx + 1 : new_idx);
-            nextPos = grid[new_idx];
-            grid_dancers.put(i, new_idx);
-            lastPosition = new_idx;
         }
-
         return nextPos;
     }
 
@@ -412,6 +401,10 @@ public class Player implements sqdance.sim.Player {
      *   if there are too many dancers, place them above the grid in a similar formation
      */
     private Point[] generateGrid(int dancers) {
+        if (dancers == 0) {
+            return new Point[0];
+        }
+
         Point[] locs = new Point[dancers];
         int passive_dancers = (dancers > MAX_DANCERS ? dancers - MAX_DANCERS : 0);
 
