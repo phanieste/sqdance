@@ -11,8 +11,19 @@ public class Player implements sqdance.sim.Player {
 
 
     // some constants
-    private final double PAIR_DIST = .52; // min distance between pairs 
-    private final double PARTNER_DIST = .51; // distance between partners 
+    private final double MIN_DIST = 0.1001; // min distance to avoid claustrophobia 
+    private final double PAIR_DIST = .500011; // min distance between pairs 
+    private final double PARTNER_DIST = .50001; // distance between partners 
+
+    // TODO: figure out a way to calculate these constants based on room side length
+    // max number of dancers to handle before "too many" for dance floor
+    private final int MAX_DANCERS = 1368; 
+    // number of passive dancers in space occupied by two rows of active dancers
+    private final int PASSIVE_RATIO = 1728;
+    // number of active dancers in two rows
+    private final int ACTIVE_RATIO = 72;
+    // max # of passive dancers before we need to start clearing out active dancers
+    private final int MAX_PASSIVE = 720;
 
     // E[i][j]: the remaining enjoyment player j can give player i
     // -1 if the value is unknown (everything unknown upon initialization)
@@ -331,25 +342,79 @@ public class Player implements sqdance.sim.Player {
     }
 
     /*
-     * generateGrid():
-
-     * xdir -- flag for what direction to place next location (in x direction)
-        0: add +x direction
-        1: -x direction
+     * generateGrid(): generate a grid of locations for dancers
+     *   if there are too many dancers, place them above the grid in a similar formation
      */
     private Point[] generateGrid(int dancers) {
         Point[] locs = new Point[dancers];
-        int midpoint = dancers / 2;
-        Point start = new Point(1.0,1.0);
+        int passive_dancers = (dancers > MAX_DANCERS ? dancers - MAX_DANCERS : 0);
+
+        // adjust number of active dancers based on capacity
+        // pair_rows: # of rows to clear, where one row == a row of pairs (so 2 rows of dancers)
+        int pair_rows = 0;
+        if (dancers > MAX_DANCERS) {
+            pair_rows = (int) Math.ceil((passive_dancers - MAX_PASSIVE) / ((float) PASSIVE_RATIO));
+        }
+
+        int active_dancers = (dancers > MAX_DANCERS ? MAX_DANCERS - ACTIVE_RATIO * pair_rows : dancers);
+
+        int midpoint = active_dancers / 2;
+
+        //Point start = new Point(1.0,1.0);
+        Point start = new Point(1.0, 1.0 + (PARTNER_DIST + PAIR_DIST) * pair_rows);
         locs[0] = start;
 
         // flag for what direction we place next, once we hit a border switch the flag
         boolean xdir = false;
-        // flag for placing in y directio
+        // flag for placing in y direction (false is below, true is above)
         boolean ydir = false;
         Point curr = start;
         for (int i = 1; i < dancers; i++) {
-            if (i == midpoint) {
+            if (i == active_dancers) {
+                curr = new Point(start.x, start.y - PAIR_DIST);
+                ydir = true;
+                xdir = false;
+            }
+            else if (i > active_dancers) {
+                // place extra dancers
+                if (i == active_dancers + (dancers - active_dancers) / 2) {
+                    // "wrap-around" at halfway point
+                    curr = new Point(curr.x, curr.y - MIN_DIST);
+                    ydir = false;
+                    xdir = !xdir;
+                }
+                else if (!xdir) {
+                    // place to the right (in x direction)
+                    if (curr.x + MIN_DIST > room_side - 1) {
+                        if (!ydir) {
+                            curr = new Point(curr.x, curr.y + 2 * MIN_DIST);
+                        }
+                        else {
+                            curr = new Point(curr.x, curr.y - 2 * MIN_DIST);
+                        }
+                        xdir = true;
+                    }
+                    else {
+                        curr = new Point(curr.x + MIN_DIST, curr.y);
+                    }
+                }
+                else if (xdir) {
+                    // place to the left (in x direction)
+                    if (curr.x - MIN_DIST < 1) {
+                        if (!ydir) {
+                            curr = new Point(curr.x, curr.y + 2 * MIN_DIST);
+                        }
+                        else {
+                            curr = new Point(curr.x, curr.y - 2 * MIN_DIST);
+                        }
+                        xdir = false;
+                    }
+                    else {
+                        curr = new Point(curr.x - MIN_DIST, curr.y);
+                    }
+                }
+            }
+            else if (i == midpoint) {
                 // always "wrap-around" at halfway point
                 curr = new Point(curr.x, curr.y + PARTNER_DIST);
                 ydir = true;
