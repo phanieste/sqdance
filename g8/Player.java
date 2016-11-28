@@ -36,12 +36,16 @@ public class Player implements sqdance.sim.Player {
     private int d = -1;
     private double room_side = -1;
 
+    private double gridMargins = 1;
+
     private int pairs;
     
     private Map<Integer,Integer> circle_dancers; // mapping of dancer_id to place in the circle 
     private Map<Integer,Integer> grid_dancers; // mapping of dancer_id to place in the circle 
     private Map<Integer,Integer> soulmates; // mapping of soulmate ids to place in circle
     private Map<Integer,Integer> soulmates_values; // mapping of place in circle to soulmate id
+
+    private Map<Integer,Point> soulmate_grid;
 
     private Point[] soulmate_circle; // set of locations that create a soulmate circle
     private Point[] grid; // array of grid locations
@@ -50,28 +54,32 @@ public class Player implements sqdance.sim.Player {
 
     private int[] idle_turns;
 
+    int lastPosition = 0;
+    boolean firstTime = true;
+
     // init function called once with simulation parameters before anything else is called
     public void init(int d, int room_side) {
-	this.d = d;
-	this.room_side = (double) room_side;
-        this.pairs = d / 2;
-        this.circle_dancers = new HashMap<Integer,Integer>();
-        this.grid_dancers = new HashMap<Integer,Integer>();
-        this.soulmates = new HashMap<Integer,Integer>();
-        this.soulmates_values = new HashMap<Integer,Integer>();
-        if(d>180){this.soulmate_circle = generateCircle(d, 0);}
-        else{this.soulmate_circle = generateCircle(d, 2);}
-        this.swap = false;
-	random = new Random();
-	E = new int [d][d];
-	idle_turns = new int[d];
-	for (int i=0 ; i<d ; i++) {
-	    idle_turns[i] = 0;
-	    for (int j=0; j<d; j++) {
-		E[i][j] = i == j ? 0 : -1;
-	    }
-	}
-    }
+       this.d = d;
+       this.room_side = (double) room_side;
+       this.pairs = d / 2;
+       this.circle_dancers = new HashMap<Integer,Integer>();
+       this.grid_dancers = new HashMap<Integer,Integer>();
+       this.soulmates = new HashMap<Integer,Integer>();
+       this.soulmates_values = new HashMap<Integer,Integer>();
+       this.soulmate_grid = new HashMap<Integer,Point>();
+       if(d>180){this.soulmate_circle = generateCircle(d, 0);}
+       else{this.soulmate_circle = generateCircle(d, 2);}
+       this.swap = false;
+       random = new Random();
+       E = new int [d][d];
+       idle_turns = new int[d];
+       for (int i=0 ; i<d ; i++) {
+           idle_turns[i] = 0;
+           for (int j=0; j<d; j++) {
+              E[i][j] = i == j ? 0 : -1;
+          }
+      }
+  }
 
 
     /*
@@ -139,7 +147,7 @@ public class Player implements sqdance.sim.Player {
             return instructions;
         }
         else if (d <= 220) {
-            
+
             // track the new soulmates we get to properly reassign circle positions
             Set<Integer> new_soulmates = new HashSet<Integer>();
             
@@ -180,7 +188,7 @@ public class Player implements sqdance.sim.Player {
                 else {
                     // not a circle dancer (so must be a soulmate)
                     int next_idx = soulmates.get(i);
-                nextPos = (soulmate_circle[next_idx]);
+                    nextPos = (soulmate_circle[next_idx]);
                 }
                 instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
                 instructions[i] = makeValidMove(instructions[i]);
@@ -190,39 +198,97 @@ public class Player implements sqdance.sim.Player {
             return instructions;
         }
         else {
+            Set<Integer> new_soulmates = new HashSet<Integer>();
             for (int i = 0; i < d; i++) {
                 Point curr = dancers[i];
-                Point nextPos;
-                nextPos = (swap ? swapGridPartners(i) : curr);
-                instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
-                instructions[i] = makeValidMove(instructions[i]);
+                int enjoyment = enjoyment_gained[i];
+                int partner = partner_ids[i];
+                if (enjoyment == 6 && grid_dancers.containsKey(i)) {
+
+                    Point soulmate1 = new Point(grid[(grid.length-1)/2].x + PAIR_DIST,grid[(grid.length+1)/2].y + PARTNER_DIST);
+                    Point soulmate2 = new Point(grid[(grid.length-1)/2].x + PAIR_DIST,grid[(grid.length+1)/2].y+(PARTNER_DIST*2));
+
+                    soulmate_grid.put(i, soulmate1);
+                    soulmate_grid.put(partner, soulmate2);
+                    
+                    instructions[i] = makeValidMove(new Point(soulmate1.x-curr.x,soulmate1.y-curr.y));
+                    instructions[partner] = makeValidMove(new Point(soulmate2.x-curr.x,soulmate2.y-curr.y));
+                    grid_dancers.remove(partner);
+                    grid_dancers.remove(i);
+
+                    new_soulmates.add(i);
+                    new_soulmates.add(partner);
+
+                    grid = generateGrid(grid_dancers.size());
+
+                }
             }
-            
+
+            lastPosition = 0;
+            firstTime = true;
+
+
+            for (int i = 0; i < d; i++) {
+                Point curr = dancers[i];
+                int partner = partner_ids[i];
+
+                if(grid_dancers.containsKey(i)){                
+                        Point nextPos;
+                        nextPos = (swap ? swapGridPartners(i, new_soulmates) : curr);
+                        instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
+                        instructions[i] = makeValidMove(instructions[i]);
+                }
+                else{
+
+                    Point soulmate1 = soulmate_grid.get(i);
+                    Point soulmate2 = soulmate_grid.get(partner);
+                    
+                    instructions[i] = makeValidMove(new Point(soulmate1.x-curr.x,soulmate1.y-curr.y));
+                    instructions[partner] = makeValidMove(new Point(soulmate1.x-curr.x,soulmate1.y-curr.y));
+                        
+                }
+            }
+           
             swap = !swap;
             return instructions;
         }
     }
-
+    int temp = 0;
     /*
      * swapGridPartners
      *    i -- current dancer id
      */
-    private Point swapGridPartners(int i) {
+    private Point swapGridPartners(int i, Set<Integer> new_soulmates) {
+
+        int activeDancers = grid_dancers.size();
         int idx = grid_dancers.get(i);
         Point nextPos;
-        
+
         if (idx == 0) {
             // if first dancer, hold position
             nextPos = grid[idx];
             grid_dancers.put(i, idx);
+            return nextPos;
         }
-        else {
-            // otherwise go to the next position
-            int new_idx = (idx + 1) % d;
+
+        if(firstTime){
+            int new_idx = (idx + 1) % activeDancers;
             new_idx = (new_idx == 0 ? new_idx + 1 : new_idx);
             nextPos = grid[new_idx];
             grid_dancers.put(i, new_idx);
+            firstTime = false;
+            lastPosition = new_idx;
+            return nextPos;
+        }else{
+
+            // otherwise go to the next position
+            int new_idx = (lastPosition + 1) % activeDancers;
+            new_idx = (new_idx == 0 ? new_idx + 1 : new_idx);
+            nextPos = grid[new_idx];
+            grid_dancers.put(i, new_idx);
+            lastPosition = new_idx;
         }
+
         return nextPos;
     }
 
@@ -338,8 +404,8 @@ public class Player implements sqdance.sim.Player {
      * polarToCart(): convert polar r, theta to cartesian x,y point
      */
     private Point polarToCart(double r, double theta) {
-       return new Point(r * Math.cos(theta), r * Math.sin(theta));
-    }
+     return new Point(r * Math.cos(theta), r * Math.sin(theta));
+ }
 
     /*
      * generateGrid(): generate a grid of locations for dancers
@@ -361,7 +427,7 @@ public class Player implements sqdance.sim.Player {
         int midpoint = active_dancers / 2;
 
         //Point start = new Point(1.0,1.0);
-        Point start = new Point(1.0, 1.0 + (PARTNER_DIST + PAIR_DIST) * pair_rows);
+        Point start = new Point(gridMargins, gridMargins + (PARTNER_DIST + PAIR_DIST) * pair_rows);
         locs[0] = start;
 
         // flag for what direction we place next, once we hit a border switch the flag
@@ -385,7 +451,7 @@ public class Player implements sqdance.sim.Player {
                 }
                 else if (!xdir) {
                     // place to the right (in x direction)
-                    if (curr.x + MIN_DIST > room_side - 1) {
+                    if (curr.x + MIN_DIST > room_side - gridMargins) {
                         if (!ydir) {
                             curr = new Point(curr.x, curr.y + 2 * MIN_DIST);
                         }
@@ -400,7 +466,7 @@ public class Player implements sqdance.sim.Player {
                 }
                 else if (xdir) {
                     // place to the left (in x direction)
-                    if (curr.x - MIN_DIST < 1) {
+                    if (curr.x - MIN_DIST < gridMargins) {
                         if (!ydir) {
                             curr = new Point(curr.x, curr.y + 2 * MIN_DIST);
                         }
@@ -422,7 +488,7 @@ public class Player implements sqdance.sim.Player {
             }
             else if (!xdir) {
                 // place to the right (in x direction)
-                if (curr.x + PAIR_DIST > room_side - 1) {
+                if (curr.x + PAIR_DIST > room_side - gridMargins) {
                     if (!ydir) {
                         curr = new Point(curr.x, curr.y + PAIR_DIST + PARTNER_DIST);
                     }
@@ -437,7 +503,7 @@ public class Player implements sqdance.sim.Player {
             }
             else if (xdir) {
                 // place to the left (in x direction)
-                if (curr.x - PAIR_DIST < 1) {
+                if (curr.x - PAIR_DIST < gridMargins) {
                     if (!ydir) {
                         curr = new Point(curr.x, curr.y + PAIR_DIST + PARTNER_DIST);
                     }
