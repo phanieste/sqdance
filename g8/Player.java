@@ -191,10 +191,8 @@ public class Player implements sqdance.sim.Player {
                 instructions[i] = makeValidMove(instructions[i]);
             } 
 
-            swap = !swap;
-            return instructions;
         }
-        else {
+        else if (d <= 1368){
             Set<Integer> new_soulmates = new HashSet<Integer>();
             for (int i = 0; i < d; i++) {
                 Point curr = dancers[i];
@@ -202,8 +200,8 @@ public class Player implements sqdance.sim.Player {
                 int partner = partner_ids[i];
                 if (enjoyment == 6 && grid_dancers.containsKey(i)) {
 
-                    Point soulmate1 = new Point(grid[(grid.length-1)/2].x + PAIR_DIST,grid[(grid.length+1)/2].y + PARTNER_DIST);
-                    Point soulmate2 = new Point(grid[(grid.length-1)/2].x + PAIR_DIST,grid[(grid.length+1)/2].y+(PARTNER_DIST*2));
+                    Point soulmate1 = new Point(grid[(grid.length-1)/2].x,grid[(grid.length-1)/2].y);
+                    Point soulmate2 = new Point(grid[(grid.length)/2].x,grid[(grid.length)/2].y);
 
                     soulmate_grid.put(i, soulmate1);
                     soulmate_grid.put(partner, soulmate2);
@@ -226,10 +224,10 @@ public class Player implements sqdance.sim.Player {
                 int partner = partner_ids[i];
 
                 if(grid_dancers.containsKey(i)){                
-                        Point nextPos;
-                        nextPos = (swap ? swapGridPartners(i, new_soulmates) : curr);
-                        instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
-                        instructions[i] = makeValidMove(instructions[i]);
+                    Point nextPos;
+                    nextPos = (swap ? swapGridPartners(i, new_soulmates) : curr);
+                    instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
+                    instructions[i] = makeValidMove(instructions[i]);
                 }
                 else{
 
@@ -238,15 +236,48 @@ public class Player implements sqdance.sim.Player {
                     
                     instructions[i] = makeValidMove(new Point(soulmate1.x-curr.x,soulmate1.y-curr.y));
                     instructions[partner] = makeValidMove(new Point(soulmate1.x-curr.x,soulmate1.y-curr.y));
-                        
+
+                }
+            } 
+        } else {
+                for (int i = 0; i < d; i++) {
+                    Point curr = dancers[i];
+                    Point nextPos;
+                    nextPos = (swap ? swapGridPartners(i) : curr);
+                    instructions[i] = new Point(nextPos.x - curr.x, nextPos.y - curr.y);
+                    instructions[i] = makeValidMove(instructions[i]);
                 }
             }
-           
+
             swap = !swap;
             return instructions;
-        }
+        
     }
-    int temp = 0;
+
+    /*
+     * swapGridPartners
+     *    i -- current dancer id
+     */
+    private Point swapGridPartners(int i) {
+        int idx = grid_dancers.get(i);
+        Point nextPos;
+        
+        if (idx == 0) {
+            // if first dancer, hold position
+            nextPos = grid[idx];
+            grid_dancers.put(i, idx);
+        }
+        else {
+            // otherwise go to the next position
+            int new_idx = (idx + 1) % d;
+            new_idx = (new_idx == 0 ? new_idx + 1 : new_idx);
+            nextPos = grid[new_idx];
+            grid_dancers.put(i, new_idx);
+        }
+        return nextPos;
+    }
+
+
     /*
      * swapGridPartners
      *    i -- current dancer id
